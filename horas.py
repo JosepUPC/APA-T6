@@ -1,120 +1,99 @@
+"""
+horas.py
+
+Conté la funció normalizaHoras(ficText, ficNorm), que llegeix un fitxer de text
+amb expressions horàries en format oral i escrit en castellà, i les normalitza al format HH:MM.
+Les expressions incorrectes es deixen intactes.
+"""
+
 import re
 
 def normalizaHoras(ficText, ficNorm):
-    with open(ficText, encoding='utf-8') as f:
-        lineas = f.readlines()
+    with open(ficText, encoding="utf-8") as f:
+        texto = f.read()
 
-    patrones = [
-        # 1. hh:mm
-        (re.compile(r'\b(?P<h>\d{1,2}):(?P<m>\d{2})\b'), lambda h, m, _: validar_hora(h, m)),
+    def a24h(hora, periodo):
+        """Converteix hora de 12h a 24h segons el període"""
+        if hora == 12:
+            hora = 0
+        if periodo == "mañana":
+            return hora
+        elif periodo == "mediodía":
+            return hora + 12 if hora < 12 else 12
+        elif periodo == "tarde":
+            return hora + 12 if 1 <= hora <= 7 else -1
+        elif periodo == "noche":
+            return hora + 12 if 8 <= hora <= 11 else 0 if hora == 12 else -1
+        elif periodo == "madrugada":
+            return hora if 1 <= hora <= 6 else -1
+        return -1
 
-        # 2. hhHmMm, hhH
-        (re.compile(r'\b(?P<h>\d{1,2})h(?P<m>\d{1,2})m\b'), lambda h, m, _: validar_hora(h, m)),
-        (re.compile(r'\b(?P<h>\d{1,2})h\b'), lambda h, _, __: validar_hora(h, 0)),
+    def normalitzar(match):
+        if match.group("formato1"):
+            h, m = match.group("h1"), match.group("m1")
+            if len(m) == 1:
+                return match.group(0)  # minut mal format
+            return f"{int(h):02}:{int(m):02}"
 
-        # 3. 8 en punto
-        (re.compile(r'\b(?P<h>\d{1,2})\s+en punto\b'), lambda h, _, __: validar_hora(h, 0)),
+        if match.group("formato2"):
+            h = int(match.group("h2"))
+            m = match.group("m2")
+            if m:
+                m = int(m)
+                if m > 59:
+                    return match.group(0)
+            else:
+                m = 0
+            if h > 23:
+                return match.group(0)
+            return f"{h:02}:{m:02}"
 
-        # 4. 8 y cuarto/media/menos cuarto
-        (re.compile(r'\b(?P<h>\d{1,2})\s+y\s+cuarto\b'), lambda h, _, __: validar_hora(h, 15)),
-        (re.compile(r'\b(?P<h>\d{1,2})\s+y\s+media\b'), lambda h, _, __: validar_hora(h, 30)),
-        (re.compile(r'\b(?P<h>\d{1,2})\s+menos\s+cuarto\b'), lambda h, _, __: validar_hora(int(h) - 1, 45)),
+        if match.group("formato3"):
+            h = int(match.group("h3"))
+            if h > 23:
+                return match.group(0)
+            return f"{h:02}:00"
 
-        # 5. hh amb franja (matí, tarda...)
-        (re.compile(r'\b(?P<h>\d{1,2})(?::(?P<m>\d{2}))?\s+de la (?P<franja>mañana|tarde|noche|madrugada)\b'), lambda h, m, franja: convertir_con_franja(h, m, franja)),
-    
-        # 6. del mediodía
-        (re.compile(r'\b(?P<h>\d{1,2})(?::(?P<m>\d{2}))?\s+(de la|del)\s+(?P<franja>mañana|tarde|noche|madrugada|mediodía)\b')),
+        if match.group("formato4"):
+            h = int(match.group("h4"))
+            if "cuarto" in match.group(0):
+                m = 15
+            elif "media" in match.group(0):
+                m = 30
+            elif "menos cuarto" in match.group(0):
+                h = h - 1 if h > 1 else 12
+                m = 45
+            else:
+                return match.group(0)
+            return f"{h % 12:02}:{m:02}"
 
-        (re.compile(r'\b(?P<h>\d{1,2})\s+(y\s+(?P<tipo>cuarto|media)|menos\s+(?P<menos>cuarto))\s+(de la|del)\s+(?P<franja>mañana|tarde|noche|madrugada|mediodía)\b')),
+        if match.group("formato5"):
+            h = int(match.group("h5"))
+            periodo = match.group("p5").strip()
+            pmap = {
+                "mañana": "mañana",
+                "mediodía": "mediodía",
+                "tarde": "tarde",
+                "noche": "noche",
+                "madrugada": "madrugada"
+            }
+            p = pmap.get(periodo, "")
+            h24 = a24h(h, p)
+            if h24 == -1:
+                return match.group(0)
+            return f"{h24:02}:00"
 
-    ]
+        return match.group(0)
 
-    nuevas_lineas = []
-    lambda h, m, franja, tipo=None, menos=None: convertir_franja_con_palabras(h, tipo, menos, franja)
+    patron = re.compile(r"""
+        (?P<formato1>(?P<h1>\d{1,2}):(?P<m1>\d{2}))                         | # 18:30
+        (?P<formato2>(?P<h2>\d{1,2})h(?P<m2>\d{1,2})?m?)                    | # 8h, 10h30m
+        (?P<formato3>(?P<h3>\d{1,2})\s+en\s+punto)                          | # 7 en punto
+        (?P<formato4>(?P<h4>\d{1,2})\s+(y\s+(cuarto|media)|menos\s+cuarto))| # 4 y media
+        (?P<formato5>(?P<h5>\d{1,2})\s+de\s+la\s+(mañana|tarde|noche|mediodía|madrugada)) # 7 de la mañana
+    """, re.VERBOSE | re.IGNORECASE)
 
+    texto_normalizado = patron.sub(normalitzar, texto)
 
-    for linea in lineas:
-        original = linea
-        for patron, funcion in patrones:
-            def reemplazo(m):
-                h = m.group('h')
-                mnt = m.group('m') if 'm' in m.groupdict() else 0
-                franja = m.group('franja') if 'franja' in m.groupdict() else None
-                try:
-                    hhmm = funcion(h, mnt, franja)
-                    if hhmm:
-                        return hhmm
-                except:
-                    pass
-                return m.group(0)
-            linea = patron.sub(reemplazo, linea)
-        nuevas_lineas.append(linea)
-
-    with open(ficNorm, 'w', encoding='utf-8') as f:
-        f.writelines(nuevas_lineas)
-
-def validar_hora(h, m):
-    h, m = int(h), int(m)
-    if 0 <= h <= 23 and 0 <= m <= 59:
-        return f"{h:02d}:{m:02d}"
-    return None
-
-def convertir_con_franja(h, m, franja):
-    h = int(h)
-    m = int(m) if m else 0
-
-    if h == 0 or h > 12 or m > 59:
-        return None
-
-    if franja == 'mañana':  # 4-12 -> 04-12
-        if 4 <= h <= 11:
-            return f"{h:02d}:{m:02d}"
-        elif h == 12:
-            return f"00:{m:02d}"
-    elif franja == 'mediodía':  # 12-15 -> 12-15
-        if 12 <= h <= 15:
-            return f"{h:02d}:{m:02d}"
-    elif franja == 'tarde':  # 16-20
-        if 1 <= h <= 7:
-            return f"{h+12:02d}:{m:02d}"
-    elif franja == 'noche':  # 21-03
-        if 8 <= h <= 11:
-            return f"{h+12:02d}:{m:02d}"
-        elif h == 12:
-            return f"00:{m:02d}"
-    elif franja == 'madrugada':
-        if 1 <= h <= 6:
-            return f"{h:02d}:{m:02d}"
-    return None
-
-def convertir_franja_con_palabras(h, tipo, menos, franja):
-    h = int(h)
-    if menos:
-        h -= 1
-        m = 45
-    elif tipo == 'cuarto':
-        m = 15
-    elif tipo == 'media':
-        m = 30
-    else:
-        m = 0
-    return convertir_con_franja(h, m, franja)
-
-def _test():
-    """
-    >>> validar_hora("17", "05")
-    '17:05'
-    >>> validar_hora("17", "5") is None
-    True
-    >>> convertir_con_franja("6", "15", "de la tarde")
-    '18:15'
-    >>> convertir_con_franja("7", None, "noche")
-    '19:00'
-    >>> convertir_franja_con_palabras("5", "media", None, "mañana")
-    '05:30'
-    """
-
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()
+    with open(ficNorm, "w", encoding="utf-8") as f:
+        f.write(texto_normalizado)
