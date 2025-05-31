@@ -1,89 +1,70 @@
 import re
+
 class Alumno:
     """
-    Clase usada para el tratamiento de las notas de los alumnos. Cada uno
-    incluye los atributos siguientes:
-
-    numIden:   Número de identificación. Es un número entero que, en caso
-               de no indicarse, toma el valor por defecto 'numIden=-1'.
-    nombre:    Nombre completo del alumno.
-    notas:     Lista de números reales con las distintas notas de cada alumno.
+    Representa un alumne amb número d'expedient, nom complet i notes.
     """
 
-    def __init__(self, nombre, numIden=-1, notas=[]):
-        self.numIden = numIden
-        self.nombre = nombre
-        self.notas = [nota for nota in notas]
+    def __init__(self, numExp, nom, notes):
+        self.numExp = numExp  # Número d'expedient
+        self.nom = nom        # Nom complet
+        self.notes = notes    # Llista de notes (floats)
 
-    def __add__(self, other):
-        """
-        Devuelve un nuevo objeto 'Alumno' con una lista de notas ampliada con
-        el valor pasado como argumento. De este modo, añadir una nota a un
-        Alumno se realiza con la orden 'alumno += nota'.
-        """
-        return Alumno(self.nombre, self.numIden, self.notas + [other])
-
-    def media(self):
-        """
-        Devuelve la nota media del alumno.
-        """
-        return sum(self.notas) / len(self.notas) if self.notas else 0
-
-    def __repr__(self):
-        """
-        Devuelve la representación 'oficial' del alumno. A partir de copia
-        y pega de la cadena obtenida es posible crear un nuevo Alumno idéntico.
-        """
-        return f'Alumno("{self.nombre}", {self.numIden!r}, {self.notas!r})'
+    def mitjana(self):
+        # Retorna la mitjana aritmètica de les notes (arrodonida a 1 decimal)
+        return round(sum(self.notes) / len(self.notes), 1) if self.notes else 0.0
 
     def __str__(self):
-        """
-        Devuelve la representación 'bonita' del alumno. Visualiza en tres
-        columnas separas por tabulador el número de identificación, el nombre
-        completo y la nota media del alumno con un decimal.
-        """
-        return f'{self.numIden}\t{self.nombre}\t{self.media():.1f}'
+        # numExp: 12 chars left aligned
+        # nom: 30 chars left aligned (reduce from 35 to 30)
+        # mitjana: 1 decimal float
+        return f"{self.numExp:<11}{self.nom:<34}{self.mitjana():.1f}"
 
-    def leeAlumnos(ficAlum):
-        """
-        Lee un fichero de texto con los datos de los alumnos y devuelve un 
-        diccionario donde la clave es el nombre completo y el valor es un 
-        objeto Alumno con sus datos.
 
-        El fichero debe contener líneas en las que:
-        - El primer valor es el número de identificación (entero)
-        - Luego viene el nombre (uno o varios nombres)
-        - Finalmente, una lista de notas (reales)
+def leeAlumnos(ficAlum):
+    """
+    Llegeix un fitxer amb dades d'alumnes i retorna un diccionari amb objectes Alumno.
 
-        El análisis se realiza con expresiones regulares.
+    També escriu al fitxer 'visto.txt' un resum dels alumnes i la seva mitjana.
 
-        >>> alumnos = leeAlumnos('alumnos.txt')
-        >>> for alumno in alumnos:
-        ...     print(alumnos[alumno])
-        ...
-        171     Blanca Agirrebarrenetse 9.5
-        23      Carles Balcells de Lara 4.9
-        68      David Garcia Fuster     7.0
-        """
-        alumnos = {}
-        patron = re.compile(r"""
-            ^\s*
-            (?P<id>\d+)\s+                    # número de identificación
-            (?P<nombre>(?:[^\d\.]+\s+)+?)     # nombre completo (no empieza con número o punto)
-            (?P<notas>(?:\d+(?:\.\d+)?\s*)+)  # lista de notas (números decimales)
-            \s*$
-        """, re.VERBOSE)
+    >>> alumnes = leeAlumnos("alumnos.txt")
+    >>> for a in sorted(alumnes.values(), key=lambda x: x.numExp):
+    ...     print(a)
+    23         Carles Balcell de Lara            4.9
+    68         David Garcia Fuster               7.0
+    171        Blanca Agirrebarrenetse           9.5
+    """
 
-        with open(ficAlum, 'r', encoding='utf-8') as f:
-            for linea in f:
-                match = patron.match(linea)
-                if match:
-                    numIden = int(match.group('id'))
-                    nombre = match.group('nombre').strip()
-                    notas = list(map(float, match.group('notas').split()))
-                    alumnos[nombre] = Alumno(nombre, numIden, notas)
-        return alumnos
-    
-    if __name__ == "__main__":
-        import doctest
-        doctest.testmod(optionflags=doctest.NORMALIZE_WHITESPACE)
+    alumnes = {}  # Diccionari per guardar els objectes Alumno
+
+    # Obrim el fitxer d'entrada
+    with open(ficAlum, encoding="utf-8") as f:
+        for linia in f:
+            # Extraiem totes les xifres (notes i número d'expedient)
+            trobat = re.findall(r"\d+(?:\.\d+)?", linia)
+            if not trobat:
+                continue  # Ignorem línies sense dades
+
+            numExp = int(trobat[0])            # Primer número = número d'expedient
+            notes = list(map(float, trobat[1:]))  # La resta són notes
+
+            # Eliminem les xifres de la línia per extreure el nom
+            nom = re.sub(r"\d+(?:\.\d+)?", "", linia).strip()
+            nom = re.sub(r"\s+", " ", nom)  # Netegem espais múltiples
+
+            # Guardem l'objecte Alumno al diccionari
+            alumnes[numExp] = Alumno(numExp, nom, notes)
+
+    # Obrim el fitxer de sortida per escriure els resultats
+    with open("visto.txt", "w", encoding="utf-8") as fout:
+        for a in sorted(alumnes.values(), key=lambda x: x.numExp):
+            fout.write(str(a) + "\n")  # Escrivim cada alumne amb mitjana
+
+    return alumnes
+
+
+# Només executem els tests si s'executa com a programa principal
+if __name__ == "__main__":
+    import doctest
+    # Executem els tests incrustats al docstring
+    doctest.testmod(verbose=True)
